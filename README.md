@@ -15,19 +15,12 @@ O cotovelo mantém as saídas reaproveitadas da antiga base, conforme a [versão
 2. Abra **`garra_esp32/garra_esp32.ino`** na Arduino IDE. O sketch já contém todo o painel e usa as bibliotecas que acompanham o pacote de placas ESP32 da Espressif.
 3. Conecte a placa pelo USB. Selecione o modelo da placa e a porta e clique em **Carregar**. A compilação deste projeto foi verificada com o alvo **ESP32 Dev Module** do pacote Espressif 3.3.7.
 4. Abra o **Monitor Serial** a **115200 baud** e pressione **EN/RESET** na placa. O ESP32 gera e guarda uma senha Wi-Fi na primeira inicialização e a exibe no monitor.
-5. Conecte o computador à rede **Garra-ESP-Enzo** com a senha exibida. Se o computador já tiver essa rede salva, use **Esquecer rede** antes de reconectar. Se o sistema perguntar, escolha permanecer conectado mesmo sem internet.
+## Abrir o painel pela rede do ESP32
 
-## Abrir no localhost
+1. No computador, celular ou tablet, conecte-se ao Wi-Fi **Garra-ESP-Enzo** com a senha exibida no Monitor Serial. Se o sistema perguntar, escolha permanecer conectado mesmo sem internet.
+2. Com o ESP32 ligado e o Wi-Fi conectado, abra **[http://192.168.4.1](http://192.168.4.1)** no navegador.
 
-Com o [Node.js](https://nodejs.org/) 18 ou mais recente instalado, abra o terminal na pasta que contém `servidor.mjs` e execute:
-
-```text
-node servidor.mjs
-```
-
-Abra **[http://localhost:8080](http://localhost:8080)** no navegador. O painel tenta conectar automaticamente. **Conectar** ou **Reconectar** força uma nova tentativa. O servidor roda no computador e encaminha os comandos para o ESP32 pelo Wi-Fi. Mantenha esse terminal aberto durante o uso.
-
-Pelo celular ou tablet, conecte-se à mesma rede Wi-Fi e abra **[http://192.168.4.1](http://192.168.4.1)**. O ESP32 serve o mesmo painel diretamente. Também é possível usar este endereço no computador.
+O ESP32 hospeda a página e recebe os comandos pelo Wi-Fi que ele cria. A conexão com o painel é automática. Use **Conectar** ou **Reconectar** para tentar novamente.
 
 ## Operar o braço
 
@@ -42,19 +35,9 @@ Pelo celular ou tablet, conecte-se à mesma rede Wi-Fi e abra **[http://192.168.
 | Caminho | Função |
 | --- | --- |
 | `garra_esp32/garra_esp32.ino` | Firmware pronto para gravação, com o painel embutido |
-| `web/` | HTML, CSS, JavaScript, ícone e manifesto |
-| `servidor.mjs` | Servidor de localhost sem dependências externas |
-| `scripts/embutir.mjs` | Atualiza os recursos embutidos no sketch a partir de `web/` |
+| `web/` | Cópias legíveis do HTML, CSS, JavaScript, ícone e manifesto embutidos no sketch |
 | `referencia/firmware-anexado.ino.txt` | Sketch anexado para consulta, com a senha antiga ocultada |
-| `test/servidor.test.mjs` | Testes do encaminhamento HTTP com um ESP32 simulado |
 
 A rota HTTP `GET /cmd?c=...` preserva `p` para consultar, `m,<id>,<sentido>` para mover ou parar, `v,<30–100>` para PWM e `x` para parar tudo. O firmware mantém o JSON com `v` e `j`, a frequência de 1 kHz, a rampa de partida de 150 ms e a potência inicial de 70%. A proteção roda em uma tarefa do FreeRTOS separada do servidor HTTP, para que uma requisição lenta não atrase a verificação dos motores.
-
-Após editar a interface, rode `node scripts/embutir.mjs` para atualizar também a versão servida pelo ESP32. Para verificar a sincronização e testar o servidor:
-
-```text
-node scripts/embutir.mjs --check
-node --test
-```
 
 Ainda é preciso confirmar no braço físico os quatro sentidos de movimento, a parada ao soltar e a resposta à perda de Wi-Fi.
