@@ -35,7 +35,7 @@
 
 // ---------- Rede Wi-Fi criada pelo ESP32 (modo Access Point) ----------
 // O celular conecta nesta rede e abre http://192.168.4.1
-#define WIFI_SSID   "Garra-Carangueijo"
+#define WIFI_SSID   "Garra-ESP-Enzo"
 
 String senhaDoPontoDeAcesso() {
   Preferences preferencias;
