@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#061426">
+  <title>Garra Hidráulica | Central de comando</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/painel.js" defer></script>
+</head>
+<body>
+  <svg class="symbols" aria-hidden="true" width="0" height="0">
+    <symbol id="i-arm" viewBox="0 0 24 24"><path d="M3 21h13M8 21v-5l5-7m3-2 4-3m0 0 2 2m-2-2-1 4"/><circle cx="8" cy="15" r="2"/><circle cx="14.3" cy="8" r="2"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M9 15l6-6m-6 4-2 2a3.5 3.5 0 0 0 5 5l3-3a3.5 3.5 0 0 0 0-5m0-1 2-2a3.5 3.5 0 0 0-5-5L9 7a3.5 3.5 0 0 0 0 5"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V5m-5 5 5-5 5 5"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v14m-5-5 5 5 5-5"/></symbol>
+    <symbol id="i-out" viewBox="0 0 24 24"><path d="M10 12H3m4-4-4 4 4 4m7-4h7m-4-4 4 4-4 4"/></symbol>
+    <symbol id="i-in" viewBox="0 0 24 24"><path d="M3 12h7m-4-4 4 4-4 4m15-4h-7m4-4-4 4 4 4"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-reset" viewBox="0 0 24 24"><path d="M4 11a8 8 0 1 1 2 6m-2-6V5m0 6h6"/></symbol>
+  </svg>
+  <div class="shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Garra Hidráulica, início">
+        <span class="brand-mark"><svg class="icon" aria-hidden="true"><use href="#i-arm"/></svg></span>
+        <span><strong>Garra Hidráulica</strong><small>Protótipo de robótica</small></span>
+      </a>
+      <div class="link-controls">
+        <div class="connection" id="connection" data-status="checking" role="status">
+          <span class="signal" aria-hidden="true"></span><span id="connection-text">Buscando ESP32</span>
+        </div>
+        <button class="connect" id="connect" type="button">
+          <svg class="icon" aria-hidden="true"><use href="#i-link"/></svg>
+          <span id="connect-text">Conectar</span>
+        </button>
+      </div>
+    </header>
+
+    <main>
+      <div class="intro">
+        <h1>Central de comando<span>.</span></h1>
+        <div class="operation" id="operation" data-mode="waiting">
+          <span class="operation-icon" aria-hidden="true"></span><span id="operation-text">Aguardando conexão</span>
+        </div>
+      </div>
+
+      <div class="console">
+        <figure class="schematic">
+          <div class="figure-head">
+            <span><i aria-hidden="true"></i> Braço hidráulico</span>
+            <span class="view-label">Esquema lateral</span>
+          </div>
+          <svg class="diagram" viewBox="0 25 720 342" role="img" aria-labelledby="arm-title arm-desc">
+            <title id="arm-title">Esquema do braço hidráulico</title>
+            <desc id="arm-desc">Vista lateral conceitual com as seringas, o ombro e o cotovelo. As articulações se iluminam quando o ESP32 indica um comando ativo.</desc>
+            <defs>
+              <pattern id="hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><path d="M0 0v7" stroke="#2d5576" stroke-width="2"/></pattern>
+              <linearGradient id="metal" x1="0" x2="0" y1="0" y2="1" gradientUnits="objectBoundingBox"><stop stop-color="#1f4766"/><stop offset=".48" stop-color="#142e47"/><stop offset="1" stop-color="#0b2136"/></linearGradient>
+              <linearGradient id="gold" x1="0" x2="0" y1="0" y2="1" gradientUnits="objectBoundingBox"><stop stop-color="#f5d78e"/><stop offset="1" stop-color="#9c7528"/></linearGradient>
+              <g id="bolt"><circle r="3" fill="#081c30" stroke="#6890a8"/><path d="M-1 0h2" stroke="#6890a8"/></g>
+              <g id="actuator">
+                <path d="M0 0h145" stroke="#10293e" stroke-width="20" stroke-linecap="round"/>
+                <path d="M1 0h145" stroke="#85bddd" stroke-width="4"/>
+                <path d="M19-14h72l7 5V9l-7 5H19l-5-5V-9Z" fill="#123752" stroke="#5a9aba" stroke-width="1.6"/>
+                <path d="M25-9h63V9H25Z" fill="#1768ac" fill-opacity=".38"/>
+                <path d="M25-9v18M91-11v22M37-9v6m10-6v4m10-4v6m10-6v4m10-4v6" fill="none" stroke="#78adc8" stroke-width="1.4"/>
+                <path d="M10-8v16m4-20v24m86-19v14m4-5v10" stroke="#bb984e" stroke-width="2"/>
+                <circle cx="0" cy="0" r="5.5" fill="#0e263e" stroke="#82afc8"/><circle cx="145" cy="0" r="5.5" fill="#0e263e" stroke="#82afc8"/>
+              </g>
+            </defs>
+
+            <g class="construction" fill="none">
+              <path d="M84 339h545M191 53v310M391 52v127M578 113v131" stroke-dasharray="3 6"/>
+              <path d="M99 348h183m-183-6v12m183-12v12M63 67v245m-6-245h12m-12 245h12"/>
+              <path d="M93 65h14m-7-7v14m475 241h14m-7-7v14M630 94h14m-7-7v14"/>
+              <circle cx="191" cy="237" r="93" stroke-dasharray="2 7"/>
+              <path d="M297 96a94 94 0 0 1 132-22M341 204a83 83 0 0 0 115-23" stroke-dasharray="2 6"/>
+            </g>
+
+            <ellipse cx="195" cy="327" rx="141" ry="15" fill="#030c19" opacity=".72"/>
+            <g stroke="#4a7898" stroke-width="1.7" stroke-linejoin="round">
+              <path d="M89 315l28-21h146l30 21v17H89Z" fill="url(#metal)"/>
+              <path d="M89 315h204m-195 7h186m-159-20h128" fill="none"/>
+              <path d="M132 285l20-15h74l22 15v13H132Z" fill="#14334b"/>
+              <path d="M133 285h114m-100 6h87" fill="none"/>
+              <path d="M156 269l10-43 18-16h21l17 16 9 43-15 11h-44Z" fill="url(#metal)"/>
+              <path d="M167 268l10-32h34l9 32-9 6h-35Z" fill="url(#hatch)"/>
+              <path d="M112 316h18m123 0h18" stroke="#d4af37" stroke-width="2"/>
+              <path d="M147 329v-7m9 7v-7m9 7v-7m9 7v-7m9 7v-7m9 7v-7m9 7v-7m9 7v-7m9 7v-7m9 7v-7" stroke="#346387"/>
+            </g>
+
+            <g stroke="#5486a6" stroke-width="1.8" stroke-linejoin="round">
+              <path d="M174 222L343 94l31-13 27 10 8 21-9 23-23 13-169 106-22 2-14-12Z" fill="url(#metal)"/>
+              <path d="M203 226l142-112 22-10 11 9-5 13-151 104-14 8Z" fill="#0c253c"/>
+              <path d="M227 225l126-94 14-7m-126 96 108-80M205 249l172-109" stroke="#2f6a91" fill="none"/>
+              <path d="M382 86l165 50 26 14 6 21-12 15-20 2-158-48-23-19-2-18Z" fill="url(#metal)"/>
+              <path d="M409 105l126 39 15 9-2 11-13 3-126-38-9-8Z" fill="#0b243a"/>
+              <path d="M416 114l116 36 11 7m-128-34 117 37m-123-23 132 40" stroke="#32769e" fill="none"/>
+              <path d="M551 150l15-2 16 10 22 6 7 10-5 12-22-5-23 2-13-11Z" fill="#183d58"/>
+              <path d="M602 167l16-10 26 9 14 15-5 7-14-12-19-5-10 8m-7 1 9 19 24 14 21-2 2-9-19 1-16-10-5-14" fill="#142f45"/>
+              <path d="M646 179l-5 5m7 21 0-6" stroke="#d4af37"/>
+              <path d="M180 216l151-116m83-1 107 33m-26 44 46 14" fill="none" stroke="#d4af37" stroke-width="2"/>
+            </g>
+
+            <g fill="none" stroke-linecap="round">
+              <path d="M149 283c-29-9-17-34 9-36l63-1m78-67c-1 25 21 33 49 22l103-39c30-12 47-9 64 1" stroke="#061624" stroke-width="8"/>
+              <path d="M149 283c-29-9-17-34 9-36l63-1m78-67c-1 25 21 33 49 22l103-39c30-12 47-9 64 1" stroke="#339ac7" stroke-width="2.5"/>
+            </g>
+            <use href="#actuator" transform="translate(205 267) rotate(-48)"/>
+            <use href="#actuator" transform="translate(313 175) rotate(1) scale(1.04 .86)"/>
+            <use href="#bolt" x="227" y="244"/><use href="#bolt" x="343" y="113"/><use href="#bolt" x="423" y="112"/><use href="#bolt" x="533" y="165"/>
+            <use href="#bolt" x="561" y="165"/><use href="#bolt" x="596" y="174"/><use href="#bolt" x="111" y="321"/><use href="#bolt" x="269" y="321"/>
+
+            <g class="diagram-joint" id="drawing-1" transform="translate(191 237)">
+              <circle class="halo" r="37"/><circle class="orbit" r="32"/>
+              <circle r="23" fill="#0b2036" stroke="url(#gold)" stroke-width="2.5"/>
+              <circle class="joint-core" r="14" fill="#163e5a" stroke="#63a3c5" stroke-width="1.6"/>
+              <circle r="6" fill="url(#gold)" stroke="#e0bf67"/>
+              <path d="M-18 0h5m26 0h5M0-18v5m0 26v5" stroke="#7fb1cb"/>
+            </g>
+            <g class="diagram-joint" id="drawing-2" transform="translate(386 112)">
+              <circle class="halo" r="37"/><circle class="orbit" r="32"/>
+              <circle r="22" fill="#0b2036" stroke="url(#gold)" stroke-width="2.5"/>
+              <circle class="joint-core" r="13" fill="#163e5a" stroke="#63a3c5" stroke-width="1.6"/>
+              <circle r="5.5" fill="url(#gold)" stroke="#e0bf67"/>
+              <path d="M-18 0h5m26 0h5M0-18v5m0 26v5" stroke="#7fb1cb"/>
+            </g>
+            <g class="diagram-callout" id="callout-1">
+              <path d="M160 224l-28-31H89v-18"/><circle cx="160" cy="224" r="2.5"/>
+              <text x="89" y="160">OMBRO</text>
+            </g>
+            <g class="diagram-callout" id="callout-2">
+              <path d="M408 87l33-31h94"/><circle cx="408" cy="87" r="2.5"/>
+              <text x="455" y="43">COTOVELO</text>
+            </g>
+            <g class="diagram-callout manual">
+              <path d="M263 307l44-24h49"/><text x="300" y="268">BASE MANUAL</text>
+              <path d="M618 207l-36 42h-56"/><text x="526" y="271">GARRA MANUAL</text>
+            </g>
+          </svg>
+          <figcaption><span class="legend-dot" aria-hidden="true"></span>Destaque indica o comando aceito pelo ESP32.</figcaption>
+        </figure>
+
+        <section class="controls" aria-labelledby="controls-title">
+          <div class="control-heading">
+            <h2 id="controls-title">Movimento</h2>
+            <p>Segure para mover. Solte para parar.</p>
+          </div>
+          <section class="joint" id="joint-1" aria-labelledby="shoulder-title">
+            <div class="joint-heading">
+              <span class="joint-mark" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><path d="M4 20h10m-5 0V9m2-2 9-4"/><circle cx="9" cy="9" r="2.5"/></svg></span>
+              <h3 id="shoulder-title">Ombro</h3>
+              <span class="joint-state" id="joint-state-1">Aguardando</span>
+            </div>
+            <div class="joint-actions">
+              <button type="button" class="move" data-motor="1" data-dir="1" disabled><svg class="icon" aria-hidden="true"><use href="#i-up"/></svg>Subir</button>
+              <button type="button" class="move" data-motor="1" data-dir="-1" disabled><svg class="icon" aria-hidden="true"><use href="#i-down"/></svg>Descer</button>
+            </div>
+          </section>
+          <section class="joint" id="joint-2" aria-labelledby="elbow-title">
+            <div class="joint-heading">
+              <span class="joint-mark" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><path d="m3 19 6-9m4-1 8 5"/><circle cx="11" cy="8.5" r="2.5"/></svg></span>
+              <h3 id="elbow-title">Cotovelo</h3>
+              <span class="joint-state" id="joint-state-2">Aguardando</span>
+            </div>
+            <div class="joint-actions">
+              <button type="button" class="move" data-motor="2" data-dir="1" disabled><svg class="icon" aria-hidden="true"><use href="#i-out"/></svg>Estender</button>
+              <button type="button" class="move" data-motor="2" data-dir="-1" disabled><svg class="icon" aria-hidden="true"><use href="#i-in"/></svg>Recolher</button>
+            </div>
+          </section>
+          <div class="speed">
+            <div><label for="speed">Potência dos motores <span>PWM</span></label><output id="speed-value" for="speed">—</output></div>
+            <input id="speed" type="range" min="30" max="100" step="1" disabled>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <footer class="command-bar">
+      <dl class="command-data">
+        <div><dt>Último comando</dt><dd id="last-command">Nenhum comando enviado</dd></div>
+        <div><dt>Comunicação</dt><dd id="communication">Verificando resposta do ESP32</dd></div>
+      </dl>
+      <div class="safety-actions">
+        <button class="reset" type="button" id="reset" hidden disabled><svg class="icon" aria-hidden="true"><use href="#i-reset"/></svg>Liberar controles</button>
+        <button class="emergency" id="stop" type="button"><span class="stop-mark"><svg class="icon" aria-hidden="true"><use href="#i-stop"/></svg></span>Parada de emergência</button>
+      </div>
+    </footer>
+  </div>
+</body>
+</html>
