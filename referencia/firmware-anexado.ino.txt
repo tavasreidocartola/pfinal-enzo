@@ -1,0 +1,420 @@
+// ============================================================
+//  Garra hidráulica (seringas + água) com MOTORES DC + PONTE H
+//  controlada pelo celular.
+//
+//  NÃO PRECISA DE NENHUMA BIBLIOTECA EXTRA: usa só o que já vem
+//  com o suporte ao ESP32 na Arduino IDE (WiFi, WebServer e LEDC).
+//  Tudo está neste arquivo único: a configuração fica logo abaixo.
+//
+//  Funciona com ponte H L298N, L9110S, TB6612 ou parecidas
+//  (2 entradas por motor). No L298N, deixe os jumpers ENA/ENB.
+//
+//  Comandos em http://192.168.4.1/cmd?c=<comando>
+//    m,<motor>,<dir>   dir = 1 (botão +), -1 (botão −), 0 (parar)
+//                      o celular repete enquanto o botão está apertado
+//    v,<0-100>         velocidade em %
+//    x                 PARAR tudo
+//    p                 ping
+//  Vários comandos podem ir juntos, separados por ';'  ex: m,0,1;m,1,-1
+//  Toda resposta é um JSON com o estado atual.
+// ============================================================
+#include <WiFi.h>
+#include <WebServer.h>
+#if __has_include(<esp_arduino_version.h>)
+#include <esp_arduino_version.h>
+#endif
+
+// ============================================================
+//  CONFIGURAÇÃO  (edite aqui: pinos, nomes, rede, velocidade)
+// ============================================================
+
+// ---------- Rede Wi-Fi criada pelo ESP32 (modo Access Point) ----------
+// O celular conecta nesta rede e abre http://192.168.4.1
+#define WIFI_SSID   "Garra-ESP"
+#define WIFI_SENHA  "<senha omitida>"
+
+// ---------- Motores (cada um = 1 motor DC + 1 par de seringas) ----------
+// 8 seringas = 4 pares = 4 motores = 2 módulos de ponte H (2 motores cada).
+//
+// pinoA / pinoB : vão nas entradas da ponte H (IN1/IN2 ou IN3/IN4).
+// botaoMenos / botaoMais : texto dos botões no celular.
+// invertido     : true se o motor gira ao contrário do botão.
+//
+//  Ponte H 1:  IN1 = 32  IN2 = 33  (Base)    |  IN3 = 25  IN4 = 26  (Ombro)
+//  Ponte H 2:  IN1 = 23  IN2 = 22  (Cotovelo)|  IN3 = 19  IN4 = 18  (Garra)
+//  (Ponte H 1 usa pinos do lado esquerdo da placa, a Ponte H 2 do lado direito.)
+struct Motor {
+  const char* nome;
+  const char* botaoMenos;
+  const char* botaoMais;
+  uint8_t     pinoA;
+  uint8_t     pinoB;
+  bool        invertido;
+};
+
+#define NUM_MOTORES 4
+
+static const Motor MOTORES[NUM_MOTORES] = {
+  // nome        botão −      botão +     pinoA pinoB invertido
+  { "Base",     "Esquerda",  "Direita",    32,   33,   false },
+  { "Ombro",    "Desce",     "Sobe",       25,   26,   false },
+  { "Cotovelo", "Recolhe",   "Estica",     23,   22,   false },
+  { "Garra",    "Abre",      "Fecha",      19,   18,   false },
+};
+
+// ---------- Velocidade (PWM nas entradas da ponte H) ----------
+#define VELOCIDADE_PADRAO  70    // % (ajustável pelo celular)
+#define VELOCIDADE_MIN     30    // abaixo disso o motor costuma nem girar
+#define PWM_FREQ         1000    // Hz
+#define PWM_BITS            8    // 0–255
+#define RAMPA_MS          150    // partida suave (evita tranco na hidráulica)
+
+// ---------- Segurança ----------
+// O celular manda o comando repetidamente enquanto o botão está apertado.
+// Se parar de chegar por este tempo, o motor para (botão solto / sinal caiu).
+#define TEMPO_SEM_COMANDO_MS  400
+// Tempo máximo girando sem soltar o botão (protege o fim de curso da seringa).
+#define TEMPO_MAX_MS         6000
+
+// ============================================================
+//  PÁGINA DO CELULAR
+// ============================================================
+// Página web servida pelo ESP32 (abre em qualquer navegador de celular).
+// Motores DC: SEGURE o botão para mover, SOLTE para parar.
+
+const char PAGINA_HTML[] PROGMEM = R"rawliteral(
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0d1117">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Garra">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon.svg">
+<title>Garra</title>
+<style>
+  :root {
+    --bg:#0d1117; --card:#161d27; --card2:#1e2734; --line:#2a3544;
+    --txt:#e9eef5; --sub:#8b98a9; --acc:#ffb020; --acc-txt:#1a1200;
+    --red:#ef4444; --ok:#22c55e; --warn:#f59e0b;
+  }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+  html, body { height:100%; }
+  body { margin:0; background:var(--bg); color:var(--txt); font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+         padding:max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+         display:flex; flex-direction:column; gap:12px; overscroll-behavior:none; }
+  header { display:flex; align-items:center; gap:10px; }
+  .logo { width:34px; height:34px; border-radius:9px; background:var(--acc); display:grid; place-items:center; flex:none; }
+  .logo svg { width:22px; height:22px; }
+  h1 { font-size:18px; margin:0; font-weight:700; letter-spacing:.01em; }
+  .st { margin-left:auto; display:flex; align-items:center; gap:7px; font-size:13px; color:var(--sub); }
+  .st i { width:9px; height:9px; border-radius:50%; background:var(--red); box-shadow:0 0 0 3px rgba(239,68,68,.18); }
+  .st.on i { background:var(--ok); box-shadow:0 0 0 3px rgba(34,197,94,.18); }
+  #stop { height:58px; border:0; border-radius:14px; background:var(--red); color:#fff; font-size:19px; font-weight:800; letter-spacing:.06em;
+          display:flex; align-items:center; justify-content:center; gap:10px; }
+  #stop:active { filter:brightness(.85); transform:scale(.99); }
+  #grid { display:grid; grid-template-columns:1fr; gap:10px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:12px; display:flex; flex-direction:column; gap:10px; }
+  .top { display:flex; align-items:center; justify-content:space-between; }
+  .name { font-size:16px; font-weight:700; }
+  .tag { font-size:12px; color:var(--sub); padding:3px 9px; border-radius:99px; background:var(--card2); }
+  .tag.mov { color:var(--acc-txt); background:var(--acc); }
+  .tag.lim { color:#1a0f00; background:var(--warn); }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .hold { height:72px; border:1px solid var(--line); border-radius:13px; background:var(--card2); color:var(--txt);
+          font-size:16px; font-weight:700; display:flex; align-items:center; justify-content:center; gap:8px; touch-action:none; }
+  .hold svg { width:20px; height:20px; flex:none; }
+  .hold.on { background:var(--acc); color:var(--acc-txt); border-color:var(--acc); transform:scale(.98); }
+  .vel { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:12px 14px; display:flex; align-items:center; gap:14px; }
+  .vel span { font-size:14px; color:var(--sub); }
+  .vel b { font-variant-numeric:tabular-nums; min-width:44px; text-align:right; }
+  input[type=range] { flex:1; height:32px; accent-color:var(--acc); }
+  .dica { text-align:center; font-size:12px; color:var(--sub); margin:0; }
+  @media (min-width:640px) { #grid { grid-template-columns:1fr 1fr; } }
+  @media (orientation:landscape) and (max-height:500px) {
+    body { gap:8px; } #stop { height:46px; } .hold { height:56px; } #grid { grid-template-columns:1fr 1fr; gap:8px; }
+    .card { padding:10px; gap:8px; } .dica { display:none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="#1a1200" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h8M8 20v-5l5-6M13 9l4-4M17 5l3 1M17 5l-1 3"/><circle cx="8" cy="15" r="1.6" fill="#1a1200"/></svg></div>
+  <h1>Garra Hidráulica</h1>
+  <div class="st" id="st"><i></i><span>desconectado</span></div>
+</header>
+
+<button id="stop"><svg width="20" height="20" viewBox="0 0 24 24" fill="#fff"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>PARAR TUDO</button>
+
+<div id="grid"></div>
+
+<div class="vel">
+  <span>Velocidade</span>
+  <input type="range" id="vel" min="30" max="100" step="5" aria-label="Velocidade">
+  <b id="vv">--</b>
+</div>
+<p class="dica">Segure um botão para mover e solte para parar.</p>
+
+<script>
+const $ = id => document.getElementById(id);
+const ICON = {
+  l: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>',
+  r: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>'
+};
+let estado = null, segurando = {}, ocupado = false, fila = null, falhas = 0;
+
+function online(ok) {
+  falhas = ok ? 0 : falhas + 1;
+  const on = ok || (falhas < 3 && $('st').classList.contains('on'));
+  $('st').classList.toggle('on', on);
+  $('st').querySelector('span').textContent = on ? 'conectado' : 'desconectado';
+}
+function vibrar(ms) { try { navigator.vibrate && navigator.vibrate(ms); } catch (e) {} }
+
+// Uma requisição por vez; comandos que chegam enquanto isso são juntados
+function enviar(m) {
+  if (ocupado) { fila = fila ? fila + ';' + m : m; return; }
+  ocupado = true;
+  const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 1500);
+  fetch('/cmd?c=' + encodeURIComponent(m), { cache: 'no-store', signal: ctl.signal })
+    .then(r => r.json()).then(s => { online(true); atualizar(s); })
+    .catch(() => online(false))
+    .finally(() => { clearTimeout(to); ocupado = false; if (fila) { const f = fila; fila = null; enviar(f); } });
+}
+
+function montar(j) {
+  $('grid').innerHTML = j.map((x, i) => `
+    <div class="card">
+      <div class="top"><span class="name">${x.n}</span><span class="tag" id="t${i}">parado</span></div>
+      <div class="row">
+        <button class="hold" data-i="${i}" data-d="-1">${ICON.l}${x.m}</button>
+        <button class="hold" data-i="${i}" data-d="1">${x.p}${ICON.r}</button>
+      </div>
+    </div>`).join('');
+  document.querySelectorAll('.hold').forEach(b => {
+    const i = +b.dataset.i, d = +b.dataset.d;
+    const ini = e => {
+      e.preventDefault();
+      if (b.setPointerCapture) try { b.setPointerCapture(e.pointerId); } catch (_) {}
+      segurando[i] = d; b.classList.add('on'); vibrar(12); enviar(`m,${i},${d}`);
+    };
+    const fim = () => {
+      if (segurando[i] !== d) return;
+      delete segurando[i]; b.classList.remove('on'); enviar(`m,${i},0`);
+    };
+    b.addEventListener('pointerdown', ini);
+    ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(ev => b.addEventListener(ev, fim));
+    b.addEventListener('contextmenu', e => e.preventDefault());
+  });
+}
+
+function atualizar(s) {
+  if (!estado || estado.j.length !== s.j.length) montar(s.j);
+  estado = s;
+  s.j.forEach((x, i) => {
+    const t = $('t' + i);
+    if (x.t) { t.textContent = 'solte o botão'; t.className = 'tag lim'; }
+    else if (x.d) { t.textContent = x.d > 0 ? x.p : x.m; t.className = 'tag mov'; }
+    else { t.textContent = 'parado'; t.className = 'tag'; }
+  });
+  if (document.activeElement !== $('vel')) $('vel').value = s.v;
+  $('vv').textContent = s.v + '%';
+}
+
+function pararTudo() {
+  Object.keys(segurando).forEach(k => delete segurando[k]);
+  document.querySelectorAll('.hold.on').forEach(b => b.classList.remove('on'));
+  fila = null; enviar('x');
+}
+$('stop').onclick = () => { vibrar([30, 40, 30]); pararTudo(); };
+$('vel').oninput = () => { $('vv').textContent = $('vel').value + '%'; enviar('v,' + $('vel').value); };
+
+// Enquanto houver botão apertado, repete o comando (se parar de chegar, o motor para)
+setInterval(() => {
+  const ks = Object.keys(segurando);
+  enviar(ks.length ? ks.map(i => `m,${i},${segurando[i]}`).join(';') : 'p');
+}, 150);
+document.addEventListener('visibilitychange', () => { if (document.hidden) pararTudo(); });
+window.addEventListener('blur', () => { if (Object.keys(segurando).length) pararTudo(); });
+enviar('p');
+</script>
+</body>
+</html>
+)rawliteral";
+
+// Ícone e manifesto: permitem "Adicionar à tela inicial" com cara de app
+const char ICONE_SVG[] PROGMEM = R"rawliteral(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="112" fill="#ffb020"/><g fill="none" stroke="#1a1200" stroke-width="40" stroke-linecap="round" stroke-linejoin="round"><path d="M110 410h170M195 410v-100l105-125M300 185l80-80M380 105l60 20M380 105l-20 60"/></g><circle cx="195" cy="310" r="30" fill="#1a1200"/></svg>)rawliteral";
+
+const char MANIFESTO_JSON[] PROGMEM = R"rawliteral({"name":"Garra Hidráulica","short_name":"Garra","start_url":"/","display":"standalone","orientation":"any","background_color":"#0d1117","theme_color":"#0d1117","icons":[{"src":"/icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any"}]})rawliteral";
+
+// ============================================================
+//  PROGRAMA
+// ============================================================
+
+int   direcao[NUM_MOTORES];          // -1, 0, 1
+float duty[NUM_MOTORES];             // força atual (0..1), sobe na rampa
+unsigned long ultimoCmd[NUM_MOTORES];
+unsigned long inicioGiro[NUM_MOTORES];
+bool  travado[NUM_MOTORES];          // parou por tempo máximo: espera soltar o botão
+int   velocidade = VELOCIDADE_PADRAO;
+
+WebServer server(80);
+
+// ------------------------------------------------------------
+//  PWM via LEDC (nativo do ESP32), compatível com core 2.x e 3.x
+// ------------------------------------------------------------
+#define PWM_MAX ((1 << PWM_BITS) - 1)
+
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
+  void pwmIniciar(uint8_t pino, uint8_t) { ledcAttach(pino, PWM_FREQ, PWM_BITS); }
+  void pwmEscrever(uint8_t pino, uint8_t, uint32_t v) { ledcWrite(pino, v); }
+#else
+  void pwmIniciar(uint8_t pino, uint8_t canal) { ledcSetup(canal, PWM_FREQ, PWM_BITS); ledcAttachPin(pino, canal); }
+  void pwmEscrever(uint8_t, uint8_t canal, uint32_t v) { ledcWrite(canal, v); }
+#endif
+
+void aplicarMotor(int i) {
+  int d = direcao[i];
+  if (MOTORES[i].invertido) d = -d;
+  uint32_t v = (uint32_t)(duty[i] * PWM_MAX);
+  uint32_t a = (d > 0) ? v : 0;
+  uint32_t b = (d < 0) ? v : 0;
+  pwmEscrever(MOTORES[i].pinoA, i * 2,     a);
+  pwmEscrever(MOTORES[i].pinoB, i * 2 + 1, b);
+}
+
+void pararMotor(int i) {
+  direcao[i] = 0;
+  duty[i] = 0;
+  aplicarMotor(i);
+}
+
+void pararTudo() {
+  for (int i = 0; i < NUM_MOTORES; i++) pararMotor(i);
+}
+
+// ------------------------------------------------------------
+String estadoJson() {
+  String s = "{\"v\":" + String(velocidade) + ",\"j\":[";
+  for (int i = 0; i < NUM_MOTORES; i++) {
+    if (i) s += ",";
+    s += "{\"n\":\"" + String(MOTORES[i].nome) + "\"" +
+         ",\"m\":\"" + String(MOTORES[i].botaoMenos) + "\"" +
+         ",\"p\":\"" + String(MOTORES[i].botaoMais) + "\"" +
+         ",\"d\":"   + String(direcao[i]) +
+         ",\"t\":"   + (travado[i] ? "true" : "false") + "}";
+  }
+  return s + "]}";
+}
+
+void tratarMensagem(const char* msg) {
+  int j, v;
+  unsigned long agora = millis();
+  switch (msg[0]) {
+    case 'm':
+      if (sscanf(msg, "m,%d,%d", &j, &v) == 2 && j >= 0 && j < NUM_MOTORES) {
+        v = constrain(v, -1, 1);
+        if (v == 0) { pararMotor(j); travado[j] = false; break; }
+        if (travado[j]) { ultimoCmd[j] = agora; break; }   // ainda segurando: ignora
+        if (v != direcao[j]) {               // começou a girar (ou trocou o sentido)
+          duty[j] = 0;
+          inicioGiro[j] = agora;
+          direcao[j] = v;
+        }
+        ultimoCmd[j] = agora;
+      }
+      break;
+    case 'v':
+      if (sscanf(msg, "v,%d", &v) == 1) velocidade = constrain(v, VELOCIDADE_MIN, 100);
+      break;
+    case 'x':
+      pararTudo();
+      Serial.println("PARAR acionado");
+      break;
+    default:   // 'p' (ping)
+      break;
+  }
+}
+
+// ------------------------------------------------------------
+void setup() {
+  Serial.begin(115200);
+  delay(200);
+  Serial.println("\n=== Garra hidraulica ESP32 (motores DC) ===");
+
+  for (int i = 0; i < NUM_MOTORES; i++) {
+    pwmIniciar(MOTORES[i].pinoA, i * 2);
+    pwmIniciar(MOTORES[i].pinoB, i * 2 + 1);
+    pararMotor(i);
+  }
+
+  WiFi.mode(WIFI_AP);
+  WiFi.softAP(WIFI_SSID, WIFI_SENHA);
+  Serial.printf("Rede: %s  |  Senha: %s\n", WIFI_SSID, WIFI_SENHA);
+  Serial.print("Abra no celular: http://");
+  Serial.println(WiFi.softAPIP());
+
+  server.on("/", []() { server.send(200, "text/html", PAGINA_HTML); });
+  server.on("/icon.svg", []() {
+    server.sendHeader("Cache-Control", "max-age=86400");
+    server.send(200, "image/svg+xml", ICONE_SVG);
+  });
+  server.on("/manifest.json", []() { server.send(200, "application/manifest+json", MANIFESTO_JSON); });
+  server.on("/cmd", []() {
+    if (server.hasArg("c")) {            // vários comandos separados por ';'
+      String c = server.arg("c");
+      int ini = 0;
+      while (ini < (int)c.length() && ini < 200) {
+        int fim = c.indexOf(';', ini);
+        if (fim < 0) fim = c.length();
+        tratarMensagem(c.substring(ini, fim).c_str());
+        ini = fim + 1;
+      }
+    }
+    server.send(200, "application/json", estadoJson());
+  });
+  server.onNotFound([]() {
+    server.sendHeader("Location", "/");
+    server.send(302, "text/plain", "");
+  });
+  server.begin();
+}
+
+void loop() {
+  server.handleClient();
+
+  static unsigned long t = 0;
+  unsigned long agora = millis();
+  if (agora - t < 10) return;
+  t = agora;
+
+  float alvo = velocidade / 100.0f;
+  float passo = alvo * 10.0f / RAMPA_MS;
+
+  for (int i = 0; i < NUM_MOTORES; i++) {
+    // Destrava quando o botão foi solto (comandos pararam de chegar)
+    if (travado[i] && agora - ultimoCmd[i] > TEMPO_SEM_COMANDO_MS) travado[i] = false;
+    if (direcao[i] == 0) continue;
+
+    // Segurança: botão solto / sinal perdido
+    if (agora - ultimoCmd[i] > TEMPO_SEM_COMANDO_MS) {
+      pararMotor(i);
+      continue;
+    }
+    // Segurança: girando tempo demais sem soltar
+    if (agora - inicioGiro[i] > TEMPO_MAX_MS) {
+      Serial.printf("%s: tempo maximo atingido, parado\n", MOTORES[i].nome);
+      pararMotor(i);
+      travado[i] = true;
+      continue;
+    }
+    // Partida suave
+    duty[i] = min(alvo, duty[i] + passo);
+    aplicarMotor(i);
+  }
+}
