@@ -15,7 +15,7 @@ O cotovelo mantém as saídas reaproveitadas da antiga base, conforme a [versão
 2. Abra **`garra_esp32/garra_esp32.ino`** na Arduino IDE. O sketch já contém todo o painel e usa as bibliotecas que acompanham o pacote de placas ESP32 da Espressif.
 3. Conecte a placa pelo USB. Selecione o modelo da placa e a porta e clique em **Carregar**. A compilação deste projeto foi verificada com o alvo **ESP32 Dev Module** do pacote Espressif 3.3.7.
 4. Abra o **Monitor Serial** a **115200 baud** e pressione **EN/RESET** na placa. O ESP32 gera e guarda uma senha Wi-Fi na primeira inicialização e a exibe no monitor.
-5. Conecte o computador à rede **Garra-Carangueijo** com a senha exibida. Se o computador já tiver essa rede salva, use **Esquecer rede** antes de reconectar. Se o sistema perguntar, escolha permanecer conectado mesmo sem internet.
+5. Conecte o computador à rede **Garra-ESP-Enzo** com a senha exibida. Se o computador já tiver essa rede salva, use **Esquecer rede** antes de reconectar. Se o sistema perguntar, escolha permanecer conectado mesmo sem internet.
 
 ## Abrir no localhost
 
