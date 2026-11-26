@@ -94,7 +94,7 @@ static const Motor MOTORES[NUM_MOTORES] = {
 // Tempo máximo girando sem soltar o botão (protege o fim de curso da seringa).
 #define TEMPO_MAX_MS         6000
 
-// Recursos da interface. Para sincronizar com web/, execute node scripts/embutir.mjs.
+// Recursos embutidos que o ESP32 envia ao navegador. As cópias estão em web/.
 // INÍCIO DOS RECURSOS GERADOS
 const char PAGINA_HTML[] PROGMEM = R"panel(<!doctype html>
 <html lang="pt-BR">
@@ -673,7 +673,7 @@ async function dispatch() {
   const timeout = setTimeout(() => abort.abort(), command.kind === 'ping' ? PING_TIMEOUT_MS : COMMAND_TIMEOUT_MS);
   try {
     const reply = await fetch('/cmd?c=' + encodeURIComponent(command.value), {
-      cache: 'no-store', signal: abort.signal, headers: { 'X-Garra-Painel': '1' },
+      cache: 'no-store', signal: abort.signal,
       keepalive: command.kind === 'stop'
     });
     if (!reply.ok) throw new Error('ESP32 indisponível');
