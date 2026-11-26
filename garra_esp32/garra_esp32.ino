@@ -20,8 +20,6 @@
 // ============================================================
 #include <WiFi.h>
 #include <WebServer.h>
-#include <Preferences.h>
-#include <esp_random.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include <freertos/task.h>
@@ -36,22 +34,7 @@
 // ---------- Rede Wi-Fi criada pelo ESP32 (modo Access Point) ----------
 // O celular conecta nesta rede e abre http://192.168.4.1
 #define WIFI_SSID   "Garra-ESP-Enzo"
-
-String senhaDoPontoDeAcesso() {
-  Preferences preferencias;
-  if (!preferencias.begin("garra-wifi", false)) return String();
-  String senha = preferencias.getString("senha", "");
-  if (senha.length() < 8 || senha.length() > 63) {
-    char novaSenha[17];
-    const auto primeiraParte = static_cast<unsigned long>(esp_random());
-    const auto segundaParte = static_cast<unsigned long>(esp_random());
-    snprintf(novaSenha, sizeof(novaSenha), "%08lX%08lX", primeiraParte, segundaParte);
-    if (preferencias.putString("senha", novaSenha) > 0) senha = novaSenha;
-    else senha = "";
-  }
-  preferencias.end();
-  return senha;
-}
+#define WIFI_SENHA  "garra1234"
 
 // ---------- Motores (cada um = 1 motor DC + 1 par de seringas) ----------
 // Ombro e cotovelo são motorizados. Base e garra são operadas manualmente.
@@ -963,12 +946,11 @@ void setup() {
   }
 
   WiFi.mode(WIFI_AP);
-  const String senha = senhaDoPontoDeAcesso();
-  if (senha.isEmpty() || !WiFi.softAP(WIFI_SSID, senha.c_str())) {
+  if (!WiFi.softAP(WIFI_SSID, WIFI_SENHA)) {
     Serial.println("Falha ao criar a rede Wi-Fi do ESP32.");
     return;
   }
-  Serial.printf("Rede: %s\nSenha: %s\nAbra o painel em http://", WIFI_SSID, senha.c_str());
+  Serial.printf("Rede: %s\nSenha: %s\nAbra o painel em http://", WIFI_SSID, WIFI_SENHA);
   Serial.println(WiFi.softAPIP());
 
   server.on("/", HTTP_GET, []() { servirRecurso(PSTR("text/html; charset=utf-8"), PAGINA_HTML); });
