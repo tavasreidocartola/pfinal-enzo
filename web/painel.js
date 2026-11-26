@@ -174,7 +174,7 @@ async function dispatch() {
   const timeout = setTimeout(() => abort.abort(), command.kind === 'ping' ? PING_TIMEOUT_MS : COMMAND_TIMEOUT_MS);
   try {
     const reply = await fetch('/cmd?c=' + encodeURIComponent(command.value), {
-      cache: 'no-store', signal: abort.signal, headers: { 'X-Garra-Painel': '1' },
+      cache: 'no-store', signal: abort.signal,
       keepalive: command.kind === 'stop'
     });
     if (!reply.ok) throw new Error('ESP32 indisponível');
